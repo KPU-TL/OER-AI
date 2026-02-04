@@ -95,12 +95,16 @@ class OERWebsiteUser(HttpUser):
         self.textbook_ids = []  # Store textbook IDs for navigation
         self.selected_textbook_id = None  # Stick to one textbook per user
         self.chat_session_id = None  # Single chat session for the selected textbook
-        self.user_session_id = str(uuid.uuid4())  # Generate unique user session ID
+        self.session_uuid = None  # Session UUID from API
+        self.user_session_id = None  # User session ID from API (database ID)
         self.ws = None
         self.ws_connected = False
         self.ws_messages = []  # Store received WebSocket messages
         self.update_headers()
-        print(f"User started with token: {self.token[:20]}... and session: {self.user_session_id}")
+        print(f"User started with token: {self.token[:20]}...")
+        
+        # Create user session via API
+        self.create_user_session()
         
         # Simulate landing page - fetch welcome message
         self.get_welcome_message_initial()
@@ -144,6 +148,41 @@ class OERWebsiteUser(HttpUser):
                 print("✗ Failed to refresh token")
                 return False
         return False
+    
+    def create_user_session(self):
+        """Create a user session via API (like the frontend does)."""
+        print(f"Creating user session at: {API_HOST}/prod/user_sessions")
+        response = requests.post(
+            f"{API_HOST}/prod/user_sessions",
+            headers=self.headers,
+            json={"role": "student"},
+            timeout=10
+        )
+        
+        print(f"User session creation response: {response.status_code}")
+        
+        if response.status_code == 200:  # API returns 200, not 201
+            data = response.json()
+            self.session_uuid = data.get("sessionId")
+            self.user_session_id = data.get("userSessionId")
+            print(f"✓ Created user session: {self.session_uuid[:20]}... (ID: {self.user_session_id})")
+            
+            # Fetch a new token after creating user session
+            # This ensures the token has proper authorization for this user session
+            print("Fetching new token after user session creation...")
+            new_token = get_public_token()
+            if new_token:
+                global TOKEN
+                TOKEN = new_token
+                self.token = new_token
+                self.update_headers()
+                print("✓ Token refreshed after user session creation")
+            else:
+                print("⚠ Warning: Failed to refresh token after user session creation")
+        else:
+            print(f"✗ Failed to create user session: {response.status_code}")
+            print(f"Full response: {response.text}")
+            raise ValueError(f"Failed to create user session: {response.status_code}")
     
     def connect_websocket(self):
         """Establish WebSocket connection for chat."""
@@ -379,23 +418,28 @@ class OERWebsiteUser(HttpUser):
         
         # Create or get chat session for this textbook
         if not self.chat_session_id:
-            # Create new chat session
+            # Create new chat session (exactly as frontend does)
+            print(f"Creating chat session for textbook: {textbook_id[:20]}...")
+            print(f"Using user_sessions_session_id: {self.user_session_id}")
+            
             with self.client.post(
                 f"/prod/textbooks/{textbook_id}/chat_sessions",
                 headers=self.headers,
-                json={"user_sessions_session_id": self.user_session_id},
+                json={"user_sessions_session_id": self.user_session_id},  # This is the UUID
                 catch_response=True,
                 name="/textbooks/{id}/chat_sessions (create)"
             ) as response:
                 if response.status_code == 201:
                     try:
                         data = response.json()
-                        chat_session_id = data.get("chat_session_id")
+                        print(f"Chat session response data: {data}")
+                        chat_session_id = data.get("chat_session_id") or data.get("id")
                         if chat_session_id:
                             self.chat_session_id = chat_session_id
                             print(f"✓ Created chat session: {chat_session_id[:20]}...")
                             response.success()
                         else:
+                            print(f"✗ No chat_session_id or id in response: {data}")
                             response.failure("No chat_session_id in response")
                             return
                     except json.JSONDecodeError:
