@@ -299,6 +299,27 @@ aws ssm put-parameter \
     --profile <YOUR-PROFILE-NAME>
 ```
 
+**Verify Secrets Format**
+
+After uploading secrets, it's important to verify they are stored in proper JSON format:
+
+1. **Verify Secrets Manager secrets:**
+   - Navigate to **AWS Secrets Manager** in the AWS Console
+   - Click on `github-personal-access-token`
+   - Click "Retrieve secret value"
+   - Verify the secret value is valid JSON: `{"my-github-token": "your-token-here"}`
+   - Repeat for `OERSecrets` to verify: `{"DB_Username": "your-username-here"}`
+
+2. **Verify SSM Parameter Store parameters:**
+   - Navigate to **AWS Systems Manager** → **Parameter Store**
+   - Click on `/OER/AllowedEmailDomains`
+   - Verify the value is a comma-separated list (e.g., `gmail.com,ubc.ca,student.ubc.ca`)
+   - Click on `oer-owner-name`
+   - Verify the value matches your GitHub username
+
+> [!IMPORTANT]
+> If any secrets are not in the correct format, edit them directly in the AWS Console. Incorrect formatting will cause deployment failures. You can alternatively force delete the secret with aws cli commands, but we would recommend against it.
+
 ### Step 3: CDK Deployment
 
 It's time to set up everything that goes on behind the scenes! For more information on how the backend works, feel free to refer to the Architecture documentation, but an understanding of the backend is not necessary for deployment.
@@ -309,11 +330,11 @@ Note: Guardrails (Bedrock) are created as part of the CDK deployment. For operat
 
 Open a terminal in the `/cdk` directory.
 
-**Initialize the CDK stack** (required only if you have not deployed any resources with CDK in this region before). Please replace `<YOUR-PROFILE-NAME>` with the appropriate AWS profile used earlier.
+**Initialize the CDK stack** (required only if you have not deployed any resources with CDK in this region before). Please replace `<YOUR-PROFILE-NAME>` with the appropriate AWS profile used earlier, and `<YOUR-STACK-PREFIX>` with your chosen stack prefix (recommended to be at most 6 characters).
 
 ```bash
-cdk synth --profile <YOUR-PROFILE-NAME> --context githubRepo=OER-AI
-cdk bootstrap aws://<YOUR_AWS_ACCOUNT_ID>/<YOUR_ACCOUNT_REGION> --profile <YOUR-PROFILE-NAME> --context githubRepo=OER-AI
+cdk synth --profile <YOUR-PROFILE-NAME> --context StackPrefix=<YOUR-STACK-PREFIX> --context githubRepo=OER-AI
+cdk bootstrap aws://<YOUR_AWS_ACCOUNT_ID>/<YOUR_ACCOUNT_REGION> --profile <YOUR-PROFILE-NAME> --context StackPrefix=<YOUR-STACK-PREFIX> --context githubRepo=OER-AI
 ```
 
 **Deploy CDK stack**
@@ -355,7 +376,6 @@ To resolve this issue, follow one of these approaches:
 After CDK deployment, the GitHub connection for CodePipeline is created in a **pending** state. You must manually authorize it:
 
 1. Navigate to **AWS Console** → **Code Pipeline** → **Developer Tools** → **Settings** → **Connections**
-   
 2. Find the connection named `<STACK-PREFIX>-CICD-github-connection`
 3. The status will show **Pending** - click on the connection name
 4. Click **Update pending connection**
@@ -383,7 +403,6 @@ After CDK deployment, the GitHub connection for CodePipeline is created in a **p
 - Check the CodePipeline and CodeBuild logs for any errors during the build process.
 - Verify that the required images and tags are present in ECR.
 - Ensure that the IAM roles for CodePipeline and CodeBuild have the necessary permissions to push images to ECR.
-
 
 ## Post-Deployment
 
