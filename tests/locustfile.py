@@ -239,6 +239,22 @@ class OERWebsiteUser(HttpUser):
             elif msg_type == "error":
                 error_msg = data.get("message", "Unknown error")
                 print(f"[WebSocket] ✗ Error: {error_msg}")
+            elif msg_type == "practice_material_progress":
+                # Handle practice material generation progress
+                status = data.get("status")
+                progress = data.get("progress", 0)
+                
+                if status == "complete":
+                    result_data = data.get("data", {})
+                    questions = result_data.get("questions", [])
+                    cards = result_data.get("cards", [])
+                    print(f"[WebSocket] ✓ Practice material complete (questions: {len(questions)}, cards: {len(cards)})")
+                elif status == "error":
+                    error_msg = data.get("error", "Unknown error")
+                    print(f"[WebSocket] ✗ Practice material error: {error_msg}")
+                elif status in ["initializing", "retrieving", "generating", "validating"]:
+                    # Progress update
+                    print(f"[WebSocket] Practice material: {status} ({progress}%)")
             
             self.ws_messages.append(data)
         except Exception as e:
@@ -486,3 +502,82 @@ class OERWebsiteUser(HttpUser):
             time.sleep(0.5)
         else:
             print("[WebSocket] Failed to send message")
+    
+    @task(3)
+    def view_faq(self):
+        """
+        View FAQ page for the textbook.
+        Medium weight (3) - users occasionally check FAQs.
+        """
+        if not self.selected_textbook_id:
+            print("⚠ No textbook selected for FAQ")
+            return
+        
+        textbook_id = self.selected_textbook_id
+        
+        with self.client.get(
+            f"/prod/textbooks/{textbook_id}/faq",
+            headers=self.headers,
+            catch_response=True,
+            name="/textbooks/{id}/faq"
+        ) as response:
+            if response.status_code == 200:
+                try:
+                    faqs = response.json()
+                    print(f"✓ Loaded {len(faqs)} FAQs")
+                    response.success()
+                except json.JSONDecodeError:
+                    response.failure("Failed to parse FAQ JSON")
+            elif response.status_code == 404:
+                # No FAQs yet - this is okay
+                print("✓ No FAQs available yet")
+                response.success()
+            elif self.refresh_token_if_needed(response):
+                response.failure("Token expired and refreshed")
+            else:
+                response.failure(f"Got status code {response.status_code}")
+    
+    @task(5)
+    def generate_practice_material(self):
+        """
+        Generate practice material via WebSocket.
+        Medium-high weight (5) - important user activity.
+        """
+        if not self.selected_textbook_id:
+            print("⚠ No textbook selected for practice material")
+            return
+        
+        if not self.ws_connected:
+            print("⚠ WebSocket not connected, skipping practice material")
+            return
+        
+        textbook_id = self.selected_textbook_id
+        
+        # Use textbook title as topic (we'll use a generic topic since we don't fetch title)
+        material_types = ["mcq", "flashcard", "short_answer"]
+        difficulties = ["beginner", "intermediate", "advanced"]
+        
+        # Randomly decide whether to force fresh generation (50% chance)
+        force_fresh = random.choice([True, False])
+        
+        message = {
+            "action": "generate_practice_material",
+            "textbook_id": textbook_id,
+            "topic": "Introduction and Overview",  # Generic topic
+            "material_type": random.choice(material_types),
+            "difficulty": random.choice(difficulties),
+            "num_questions": 5,
+            "num_options": 4,
+            "num_cards": 10,
+            "card_type": "definition",
+            "force_fresh": force_fresh
+        }
+        
+        print(f"[WebSocket] → Generating {message['material_type']} practice material (force_fresh={force_fresh})...")
+        success = self.send_ws_message(message)
+        
+        if success:
+            # Wait for generation to complete (can take 3-5 seconds)
+            time.sleep(5)
+        else:
+            print("[WebSocket] Failed to send practice material request")

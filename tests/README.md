@@ -45,17 +45,20 @@ locust --version
 
 Main load testing script that simulates realistic user behavior:
 
-1. **Landing Page** - Fetch welcome message
+1. **User Session Creation** - Create authenticated user session
 2. **Browse Textbooks** - List textbooks with pagination
 3. **View Textbook Details** - Navigate to individual textbook pages
 4. **Chat with LLM** - Create chat sessions and send messages via WebSocket
+5. **View FAQ** - Fetch frequently asked questions for textbook
+6. **Generate Practice Material** - Create practice questions/flashcards via WebSocket
 
 **Task Weights:**
 
-- Welcome message: 2 (low - infrequent)
-- Browse textbooks: 5 (medium - periodic browsing)
-- View textbook details: 10 (high - users spend time here)
+- Browse textbooks: 2 (low - periodic browsing)
+- View textbook details: 10 (high - users spend most time here)
 - Chat with LLM: 8 (high - primary user activity)
+- View FAQ: 3 (medium - occasional reference)
+- Generate practice material: 5 (medium-high - important feature)
 
 ## Running Load Tests
 
@@ -182,13 +185,24 @@ Check these log groups:
 
 ### 2. WebSocket Chat
 
+- ✅ Create user session via API
 - ✅ Create chat session for textbook
 - ✅ Establish WebSocket connection with token auth
 - ✅ Send chat messages via WebSocket
 - ✅ Handle streaming responses (start → chunks → complete)
 - ✅ Heartbeat/ping-pong mechanism
+- ✅ Token refresh after user session creation
 
-### 3. Error Handling
+### 3. FAQ and Practice Material
+
+- ✅ Fetch FAQ list for textbook
+- ✅ Handle 404 gracefully (no FAQs yet)
+- ✅ Generate practice materials via WebSocket
+- ✅ Track practice material progress (initializing → retrieving → generating → validating → complete)
+- ✅ Support multiple material types (MCQ, flashcard, short answer)
+- ✅ Random difficulty selection (beginner, intermediate, advanced)
+
+### 4. Error Handling
 
 - ✅ Automatic token refresh on 401 errors
 - ✅ WebSocket reconnection on disconnect
@@ -202,10 +216,13 @@ Based on initial testing:
 | Endpoint                        | Avg Response Time | 95th Percentile | Notes                          |
 | ------------------------------- | ----------------- | --------------- | ------------------------------ |
 | `/public/config/welcomeMessage` | ~120ms            | ~200ms          | Simple config fetch            |
+| `/user_sessions` (POST)         | ~150ms            | ~250ms          | User session creation          |
 | `/textbooks`                    | ~135ms            | ~250ms          | Database query with pagination |
 | `/textbooks/{id}`               | ~142ms            | ~280ms          | Single textbook lookup         |
+| `/textbooks/{id}/faq`           | ~140ms            | ~260ms          | FAQ list fetch                 |
 | Chat session creation           | ~156ms            | ~300ms          | Database insert                |
 | WebSocket chat                  | ~2-5s             | ~8s             | LLM generation (streaming)     |
+| WebSocket practice material     | ~3-8s             | ~12s            | LLM generation with validation |
 
 ## Troubleshooting
 
@@ -272,14 +289,16 @@ locust -f locustfile.py --host=... --headless -u 1 -r 1 --run-time 1m
 locust -f locustfile.py --host=... --headless -u 5 -r 1 --run-time 5m
 
 # 3. Medium load (typical usage)
-locust -f locustfile.py --host=... --headless -u 20 -r 2 --run-time 10m
+locust -f locustfile.py --host=... --headless -u 10 -r 1 --run-time 10m
 
 # 4. Stress test (find limits)
-locust -f locustfile.py --host=... --headless -u 50 -r 5 --run-time 15m
+locust -f locustfile.py --host=... --headless -u 20 -r 2 --run-time 15m
 
-# 5. Spike test (sudden traffic)
-locust -f locustfile.py --host=... --headless -u 100 -r 10 --run-time 5m
+# 5. Spike test (sudden traffic) - CAUTION: May trigger WAF/rate limits
+locust -f locustfile.py --host=... --headless -u 50 -r 5 --run-time 5m
 ```
+
+> **⚠️ Important**: High user counts (50+) or fast spawn rates (10+/sec) may trigger WAF rules or API Gateway rate limits, resulting in 403 errors. Start small and gradually increase load to find safe limits.
 
 ## CI/CD Integration
 
