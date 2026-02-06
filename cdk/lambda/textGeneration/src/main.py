@@ -100,8 +100,7 @@ FORCE_COLD_START_TEST = os.environ.get("FORCE_COLD_START_TEST", "false").lower()
 _secrets_manager = None  # Pre-loaded in try block below
 _ssm_client = None       # Pre-loaded in try block below
 _bedrock_runtime = None  # Lazy-loaded on first use (region may differ)
-_db_connection_pool = None  # Pre-warmed after config loading
-_pool_lock = threading.Lock()
+_db_connection = None    # Pre-warmed single connection (RDS Proxy handles pooling)
 _db_secret = None        # Cached after first fetch
 _embeddings = None       # Cached after first use
 _is_cold_start = True    # Tracks cold start for metrics
@@ -151,27 +150,25 @@ try:
     
     logger.info(f"Pre-loading completed in {time.time() - _startup_ts:.2f}s")
     
-    # PRE-WARM DATABASE CONNECTION POOL
-    # Creating the pool at startup eliminates ~200ms latency on first DB operation.
-    # We do this after fetching secrets so we have credentials available.
+    # PRE-WARM DATABASE CONNECTION
+    # Creating a connection at startup eliminates ~200ms latency on first DB operation.
+    # RDS Proxy handles connection pooling, so we only need one connection per Lambda container.
     try:
-        logger.info("Pre-warming database connection pool...")
-        import psycopg2.pool
+        logger.info("Pre-warming database connection...")
+        import psycopg2
         db_secret_response = _secrets_manager.get_secret_value(SecretId=DB_SECRET_NAME)
         db_creds = json.loads(db_secret_response["SecretString"])
         _db_secret = db_creds  # Cache the secret
-        _db_connection_pool = psycopg2.pool.ThreadedConnectionPool(
-            minconn=1,
-            maxconn=5,
+        _db_connection = psycopg2.connect(
             host=RDS_PROXY_ENDPOINT,
             database=db_creds["dbname"],
             user=db_creds["username"],
             password=db_creds["password"],
             port=int(db_creds["port"])
         )
-        logger.info("Database connection pool pre-warmed successfully")
-    except Exception as pool_error:
-        logger.warning(f"Failed to pre-warm connection pool (will create on-demand): {pool_error}")
+        logger.info("Database connection pre-warmed successfully")
+    except Exception as conn_error:
+        logger.warning(f"Failed to pre-warm connection (will create on-demand): {conn_error}")
         
 except Exception as e:
     logger.warning(f"Pre-loading failed (will load on-demand via fallback functions): {e}")
@@ -308,32 +305,41 @@ def initialize_constants():
     pass
 
 
-def get_db_connection_pool():
-    """Get or create database connection pool with thread-safe singleton pattern"""
-    global _db_connection_pool
+def get_db_connection():
+    """Get or create a database connection (RDS Proxy handles pooling)."""
+    global _db_connection
     
-    if _db_connection_pool is None:
-        with _pool_lock:
-            # Double-check locking pattern
-            if _db_connection_pool is None:
-                import psycopg2.pool
-                try:
-                    secret = get_secret(DB_SECRET_NAME)
-                    _db_connection_pool = psycopg2.pool.ThreadedConnectionPool(
-                        minconn=1,
-                        maxconn=5,
-                        host=RDS_PROXY_ENDPOINT,
-                        database=secret["dbname"],
-                        user=secret["username"],
-                        password=secret["password"],
-                        port=int(secret["port"])
-                    )
-                    logger.info("Database connection pool created")
-                except Exception as e:
-                    logger.error(f"Failed to create connection pool: {e}")
-                    raise
+    # Check if connection exists and is still valid
+    if _db_connection is not None:
+        try:
+            # Test if connection is still alive
+            with _db_connection.cursor() as cur:
+                cur.execute("SELECT 1")
+            return _db_connection
+        except Exception:
+            logger.warning("Existing connection is stale, creating new one")
+            try:
+                _db_connection.close()
+            except Exception:
+                pass
+            _db_connection = None
     
-    return _db_connection_pool
+    # Create new connection
+    import psycopg2
+    try:
+        secret = get_secret(DB_SECRET_NAME)
+        _db_connection = psycopg2.connect(
+            host=RDS_PROXY_ENDPOINT,
+            database=secret["dbname"],
+            user=secret["username"],
+            password=secret["password"],
+            port=int(secret["port"])
+        )
+        logger.info("Database connection created")
+        return _db_connection
+    except Exception as e:
+        logger.error(f"Failed to create database connection: {e}")
+        raise
 
 
 def get_db_credentials():
@@ -346,25 +352,15 @@ def get_db_credentials():
 
 
 def connect_to_db():
-    """Get a database connection from the pool"""
-    try:
-        pool = get_db_connection_pool()
-        connection = pool.getconn()
-        logger.info("Got database connection from pool")
-        return connection
-    except Exception as e:
-        logger.error(f"Failed to get database connection: {e}")
-        raise
+    """Get the database connection (alias for get_db_connection for compatibility)."""
+    return get_db_connection()
 
 
 def return_db_connection(connection):
-    """Return a database connection to the pool"""
-    if _db_connection_pool and connection:
-        try:
-            _db_connection_pool.putconn(connection)
-            logger.debug("Returned database connection to pool")
-        except Exception as e:
-            logger.error(f"Error returning connection to pool: {e}")
+    """No-op: Connection is reused, not returned to pool (RDS Proxy handles pooling)."""
+    # Do nothing - we reuse the same connection
+    # RDS Proxy manages the actual connection pool
+    pass
 
 
 def estimate_token_count(text: str) -> int:

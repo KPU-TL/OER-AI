@@ -4,7 +4,6 @@ import time
 import logging
 import boto3
 import psycopg2
-import psycopg2.pool
 from typing import Any, Dict
 # import helpers
 from helpers.vectorstore import get_textbook_retriever
@@ -35,7 +34,7 @@ bedrock_runtime = boto3.client("bedrock-runtime", region_name='us-east-1')  # Fo
 
 # Cache for secrets and connections
 _db_secret: Dict[str, Any] | None = None
-_connection_pool = None
+_db_connection = None  # Cached connection (RDS Proxy handles pooling)
 _embeddings = None
 _llm = None
 _is_cold_start = True
@@ -167,33 +166,45 @@ def get_secret_dict(name: str) -> Dict[str, Any]:
     return _db_secret
 
 
-def get_connection_pool():
+def get_db_connection():
     """
-    Get or create a connection pool for database operations.
-    Connection pool is reused across Lambda invocations for better performance.
+    Get or create a database connection (RDS Proxy handles pooling).
+    Connection is reused across Lambda invocations for better performance.
     """
-    global _connection_pool
+    global _db_connection
     
-    if _connection_pool is None:
-        logger.info("Creating new database connection pool")
-        db = get_secret_dict(SM_DB_CREDENTIALS)
-        
+    # Check if connection exists and is still valid
+    if _db_connection is not None:
         try:
-            _connection_pool = psycopg2.pool.ThreadedConnectionPool(
-                minconn=1,
-                maxconn=5,
-                dbname=db["dbname"],
-                user=db["username"],
-                password=db["password"],
-                host=RDS_PROXY_ENDPOINT,
-                port=db["port"]
-            )
-            logger.info("Connection pool created successfully")
-        except Exception as e:
-            logger.error(f"Failed to create connection pool: {e}")
-            raise
+            # Test if connection is still alive
+            with _db_connection.cursor() as cur:
+                cur.execute("SELECT 1")
+            return _db_connection
+        except Exception:
+            logger.warning("Existing connection is stale, creating new one")
+            try:
+                _db_connection.close()
+            except Exception:
+                pass
+            _db_connection = None
     
-    return _connection_pool
+    # Create new connection
+    logger.info("Creating new database connection")
+    db = get_secret_dict(SM_DB_CREDENTIALS)
+    
+    try:
+        _db_connection = psycopg2.connect(
+            dbname=db["dbname"],
+            user=db["username"],
+            password=db["password"],
+            host=RDS_PROXY_ENDPOINT,
+            port=db["port"]
+        )
+        logger.info("Database connection created successfully")
+        return _db_connection
+    except Exception as e:
+        logger.error(f"Failed to create database connection: {e}")
+        raise
 
 
 def initialize_constants():
@@ -342,17 +353,8 @@ def track_practice_material_analytics(
         user_session_id: Optional user session UUID
     """
     try:
-        # Get database credentials
-        db = get_secret_dict(SM_DB_CREDENTIALS)
-        
-        # Connect to database
-        conn = psycopg2.connect(
-            dbname=db["dbname"],
-            user=db["username"],
-            password=db["password"],
-            host=RDS_PROXY_ENDPOINT,
-            port=db["port"]
-        )
+        # Use shared connection (RDS Proxy handles pooling)
+        conn = get_db_connection()
         
         cursor = conn.cursor()
         
@@ -376,7 +378,7 @@ def track_practice_material_analytics(
         
         conn.commit()
         cursor.close()
-        conn.close()
+        # Don't close connection - it's reused across invocations
         
         logger.info(f"Analytics tracked: {material_type} for textbook {textbook_id}")
         
@@ -596,15 +598,15 @@ def handler(event, context):
         send_progress("retrieving", 15)
         logger.info(f"Building retriever for textbook {textbook_id}...")
         
-        # Get connection pool for database operations
-        pool = get_connection_pool()
+        # Get connection for database operations (RDS Proxy handles pooling)
+        conn = get_db_connection()
         
         retriever = get_textbook_retriever(
             llm=None,
             textbook_id=textbook_id,
             vectorstore_config_dict=vectorstore_config,
             embeddings=_embeddings,
-            connection_pool=pool,
+            connection_pool=conn,  # Pass connection (param name kept for compatibility)
         )
         logger.info("Retriever built successfully")
         send_progress("retrieving", 20)
