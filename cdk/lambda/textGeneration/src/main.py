@@ -306,8 +306,13 @@ def initialize_constants():
 
 
 def get_db_connection():
-    """Get or create a database connection (RDS Proxy handles pooling)."""
-    global _db_connection
+    """
+    Get or create a database connection (RDS Proxy handles pooling).
+    
+    If the connection fails due to stale credentials (e.g., after rotation),
+    the cached secret is cleared and a retry is attempted with fresh credentials.
+    """
+    global _db_connection, _db_secret
     
     # Check if connection exists and is still valid
     if _db_connection is not None:
@@ -324,22 +329,31 @@ def get_db_connection():
                 pass
             _db_connection = None
     
-    # Create new connection
+    # Create new connection (with one retry on auth failure for rotated credentials)
     import psycopg2
-    try:
-        secret = get_secret(DB_SECRET_NAME)
-        _db_connection = psycopg2.connect(
-            host=RDS_PROXY_ENDPOINT,
-            database=secret["dbname"],
-            user=secret["username"],
-            password=secret["password"],
-            port=int(secret["port"])
-        )
-        logger.info("Database connection created")
-        return _db_connection
-    except Exception as e:
-        logger.error(f"Failed to create database connection: {e}")
-        raise
+    for attempt in range(2):
+        logger.info(f"Creating new database connection (attempt {attempt + 1}/2)")
+        try:
+            secret = get_secret(DB_SECRET_NAME)
+            _db_connection = psycopg2.connect(
+                host=RDS_PROXY_ENDPOINT,
+                database=secret["dbname"],
+                user=secret["username"],
+                password=secret["password"],
+                port=int(secret["port"])
+            )
+            logger.info("Database connection created")
+            return _db_connection
+        except psycopg2.OperationalError as e:
+            if attempt == 0:
+                logger.warning(f"Database connection failed (possibly stale credentials), clearing cache and retrying: {e}")
+                _db_secret = None  # Clear cached secret to force fresh fetch
+            else:
+                logger.error(f"Database connection failed after retry with fresh credentials: {e}")
+                raise
+        except Exception as e:
+            logger.error(f"Failed to create database connection: {e}")
+            raise
 
 
 def get_db_credentials():
