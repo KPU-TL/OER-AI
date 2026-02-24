@@ -4,6 +4,7 @@ import {
   RedirectStatus,
 } from "@aws-cdk/aws-amplify-alpha";
 import * as cdk from "aws-cdk-lib";
+import * as iam from "aws-cdk-lib/aws-iam";
 import { BuildSpec } from "aws-cdk-lib/aws-codebuild";
 import { Construct } from "constructs";
 import * as yaml from "yaml";
@@ -56,8 +57,19 @@ export class AmplifyStack extends cdk.Stack {
       "oer-owner-name"
     );
 
+    const amplifyServiceRole = new iam.Role(this, `${id}-amplifyServiceRole`, {
+      assumedBy: new iam.ServicePrincipal("amplify.amazonaws.com"),
+      description: "Service role for Amplify to build and deploy the frontend",
+      managedPolicies: [
+        iam.ManagedPolicy.fromManagedPolicyArn(this,  "AmplifyManagedPolicy",
+          "arn:aws:iam::aws:policy/AdministratorAccess-Amplify"
+        ),
+      ],
+    });
+
     const amplifyApp = new App(this, `${id}-amplifyApp`, {
       appName: `${id}-amplify`,
+      role: amplifyServiceRole,
       sourceCodeProvider: new GitHubSourceCodeProvider({
         owner: username,
         repository: githubRepoName,
