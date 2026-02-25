@@ -792,6 +792,7 @@ def get_response(
     # 4. System Prompt (DB/Cache)
     
     logger.info("Starting parallel pre-flight checks and retrieval...")
+    start_time = time.time()
     
     try:
         with ThreadPoolExecutor(max_workers=4) as executor:
@@ -843,7 +844,7 @@ def get_response(
         logger.error(traceback.format_exc())
         raise
 
-
+    try:
         # Create RAG chains using helper function
         rag_chain = _create_rag_chains(llm, retriever, system_message)
         
