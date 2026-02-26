@@ -43,26 +43,24 @@ def get_vectorstore_retriever(llm, vectorstore_config_dict: Dict[str, str], embe
         return None
 
 
-def get_textbook_retriever(llm, textbook_id: str, vectorstore_config_dict: Dict[str, str], embeddings: BedrockEmbeddings, selected_documents=None, connection_pool=None) -> Optional[object]:
+def get_textbook_retriever(llm, textbook_id: str, vectorstore_config_dict: Dict[str, str], embeddings: BedrockEmbeddings, selected_documents=None, connection=None) -> Optional[object]:
     logger.info(f"Creating retriever for textbook ID: {textbook_id}")
     try:
-        conn = None
+        # If a connection is provided, use it directly (caller manages lifecycle).
+        # Otherwise, create a temporary one and close it when done.
+        owns_connection = connection is None
         try:
-            # Use connection pool if provided, otherwise fall back to direct connection
-            if connection_pool:
-                logger.debug("Getting connection from pool")
-                conn = connection_pool.getconn()
-            else:
-                logger.debug("Creating direct database connection (no pool provided)")
-                conn = psycopg2.connect(
+            if connection is None:
+                logger.debug("Creating direct database connection (no connection provided)")
+                connection = psycopg2.connect(
                     dbname=vectorstore_config_dict['dbname'],
                     user=vectorstore_config_dict['user'],
                     password=vectorstore_config_dict['password'],
                     host=vectorstore_config_dict['host'],
                     port=int(vectorstore_config_dict['port'])
                 )
-            
-            with conn.cursor() as cur:
+
+            with connection.cursor() as cur:
                 cur.execute("SELECT COUNT(*) FROM langchain_pg_collection WHERE name = %s", (textbook_id,))
                 collection_exists = cur.fetchone()[0] > 0
                 if not collection_exists:
@@ -80,13 +78,9 @@ def get_textbook_retriever(llm, textbook_id: str, vectorstore_config_dict: Dict[
                     logger.warning(f"No embeddings found for textbook {textbook_id}")
                     return None
         finally:
-            if conn and not conn.closed:
-                # Return connection to pool if using pool, otherwise close it
-                if connection_pool:
-                    logger.debug("Returning connection to pool")
-                    connection_pool.putconn(conn)
-                else:
-                    conn.close()
+            # Only close the connection if we created it ourselves
+            if owns_connection and connection and not connection.closed:
+                connection.close()
 
         vectorstore_config_dict['collection_name'] = textbook_id
         retriever = get_vectorstore_retriever(

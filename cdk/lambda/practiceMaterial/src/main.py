@@ -617,7 +617,7 @@ def handler(event, context):
             textbook_id=textbook_id,
             vectorstore_config_dict=vectorstore_config,
             embeddings=_embeddings,
-            connection_pool=conn,  # Pass connection (param name kept for compatibility)
+            connection=conn,
         )
         logger.info("Retriever built successfully")
         send_progress("retrieving", 20)
