@@ -2123,7 +2123,7 @@ paths:
           description: Internal Server Error
       x-amazon-apigateway-integration:
         uri:
-          Fn::Sub: arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${TextGenLambdaDockerFunc.Arn}/invocations
+          Fn::Sub: arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${TextGenLambdaDockerFunc.Arn}:live/invocations
         passthroughBehavior: "when_no_match"
         httpMethod: POST
         type: aws_proxy
@@ -6080,7 +6080,7 @@ paths:
           description: Internal Server Error
       x-amazon-apigateway-integration:
         uri:
-          Fn::Sub: arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${PracticeMaterialDockerFunc.Arn}/invocations
+          Fn::Sub: arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${PracticeMaterialDockerFunc.Arn}:live/invocations
         passthroughBehavior: "when_no_match"
         httpMethod: POST
         type: aws_proxy
@@ -6168,7 +6168,7 @@ paths:
           description: Internal Server Error - grading failed
       x-amazon-apigateway-integration:
         uri:
-          Fn::Sub: arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${PracticeMaterialDockerFunc.Arn}/invocations
+          Fn::Sub: arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${PracticeMaterialDockerFunc.Arn}:live/invocations
         passthroughBehavior: "when_no_match"
         httpMethod: POST
         type: aws_proxy
