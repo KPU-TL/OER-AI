@@ -16,7 +16,7 @@ export default function HomePageHeader() {
       <div className="w-full flex items-center justify-between px-6 py-4">
         <Link to="/" className="flex items-center gap-2 text-white hover:opacity-80 transition-opacity">
           <img src={logoImage} alt="KPU Logo" className="h-6 w-auto" />
-          <h1 className="text-xl font-semibold">OpenED AI</h1>
+          <h1 className="text-xl font-semibold">KPU OpenED AI</h1>
         </Link>
         <Select value={mode} onValueChange={(v) => setMode(v as Mode)}>
           <SelectTrigger className="w-fit border-primary-foreground bg-transparent text-white  [&_svg:not([class*='text-'])]:text-primary-foreground hover:bg-white/10">
