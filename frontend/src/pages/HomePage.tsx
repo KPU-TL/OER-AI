@@ -181,7 +181,7 @@ export default function HomePage() {
           {/* Hero Section */}
           <div className="mb-12 text-center space-y-4 animate-in fade-in slide-in-from-bottom-4 duration-700">
             <h2 className="text-5xl font-bold tracking-tight text-primary">
-              OpenED Textbook Catalogue
+              KPU OpenED Textbook Catalogue
             </h2>
             <p className="text-xl text-muted-foreground max-w-2xl mx-auto">
               Select a textbook to get started with your AI-powered learning
