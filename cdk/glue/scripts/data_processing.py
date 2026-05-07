@@ -36,7 +36,7 @@ vector_store = None
 # Database configuration
 DB_SECRET_NAME = None
 RDS_PROXY_ENDPOINT = None
-EMBEDDING_MODEL_ID = "cohere.embed-english-v3"
+EMBEDDING_MODEL_ID = None
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
