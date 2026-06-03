@@ -81,7 +81,8 @@ const apiStack = new ApiGatewayStack(
     env,
     ecrRepositories: cicdStack.ecrRepositories,
     codeBuildProjects: cicdStack.buildProjects,
-    csvBucket: dataPipelineStack.csvBucket,
+    csvBucketName: cdk.Fn.importValue(`${StackPrefix}-DataPipeline-CsvBucketName`),
+    csvBucketArn: cdk.Fn.importValue(`${StackPrefix}-DataPipeline-CsvBucketArn`),
     textbookIngestionQueue: dataPipelineStack.textbookIngestionQueue,
   }
 );

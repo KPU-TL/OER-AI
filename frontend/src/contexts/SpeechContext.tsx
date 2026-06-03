@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useMemo, useState } from "react";
+import React, { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { sanitizeForSpeech } from "@/lib/speechUtils";
 
 export type SpeechMode = "both" | "ai" | "user";
@@ -80,6 +80,18 @@ export const SpeechProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   const cancel = () => {
     window.speechSynthesis?.cancel();
     setIsSpeaking(false);
+    setCurrentUtteranceId(null);
+  };
+
+  // Chrome has a known bug where long utterances get cut off after ~15 seconds.
+  // This workaround pauses/resumes the synthesis periodically to keep it alive.
+  const resumeIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const clearResumeInterval = () => {
+    if (resumeIntervalRef.current) {
+      clearInterval(resumeIntervalRef.current);
+      resumeIntervalRef.current = null;
+    }
   };
 
   const speak = (text: string, opts?: Partial<SpeechSettings & { id?: string }>) => {
@@ -88,7 +100,9 @@ export const SpeechProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     const combined = { ...settings, ...opts } as SpeechSettings;
     if (!combined.enabled) return;
 
-    cancel();
+    // Cancel any ongoing speech and clear the resume workaround
+    clearResumeInterval();
+    window.speechSynthesis.cancel();
 
     let utterText = sanitizeForSpeech(text);
     // Basic sanitization: remove code fences + reduce whitespace
@@ -103,6 +117,8 @@ export const SpeechProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     } while (utterText !== previousUtterText);
     // Trim and collapse whitespace
     utterText = utterText.replace(/\s+/g, " ").trim();
+
+    if (!utterText) return;
 
     const utt = new SpeechSynthesisUtterance(utterText);
 
@@ -119,12 +135,23 @@ export const SpeechProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     utt.onstart = () => {
       setIsSpeaking(true);
       if (opts && (opts as any).id) setCurrentUtteranceId((opts as any).id || null);
+
+      // Chrome workaround: periodically pause/resume to prevent the 15s cutoff
+      clearResumeInterval();
+      resumeIntervalRef.current = setInterval(() => {
+        if (window.speechSynthesis.speaking && !window.speechSynthesis.paused) {
+          window.speechSynthesis.pause();
+          window.speechSynthesis.resume();
+        }
+      }, 10000);
     };
     utt.onend = () => {
+      clearResumeInterval();
       setIsSpeaking(false);
       setCurrentUtteranceId(null);
     };
     utt.onerror = (e) => {
+      clearResumeInterval();
       console.error("TTS error", e);
       setIsSpeaking(false);
       setCurrentUtteranceId(null);

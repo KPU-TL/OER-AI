@@ -38,11 +38,16 @@ export default function AIChatMessage({
       if (isTyping) return; // don't autoplay while typing
       if (!messageTime || !initialLoadTime) return;
       if (messageTime < initialLoadTime) return; // only autoplay messages that arrived after initial load
-      speak(text, { id });
+      // Small delay to prevent multiple messages from firing speech simultaneously
+      // (which causes overlapping voices in Firefox)
+      const timer = setTimeout(() => {
+        speak(text, { id });
+      }, 50);
+      return () => clearTimeout(timer);
     } catch (e) {
       console.error("Speech autoplay failed", e);
     }
-  }, [settings, isTyping, messageTime, initialLoadTime, speak]);
+  }, [settings.enabled, settings.autoplay, settings.mode, isTyping, messageTime, initialLoadTime]);
 
   const formatSource = (source: string) => {
     // Check if source contains URL

@@ -52,6 +52,7 @@ const flashcardSchema = z.object({
     .number()
     .min(1, "Must be at least 1")
     .max(20, "Maximum 20 flashcards"),
+  cardType: z.enum(["definition", "concept", "example"]),
   difficulty: z.enum(["beginner", "intermediate", "advanced"]),
 });
 
@@ -114,6 +115,7 @@ export function MaterialEditorForm({ onGenerate, isProcessing = false }: Materia
         materialType: value,
         topic: "",
         numCards: 10,
+        cardType: "definition",
         difficulty: "intermediate",
       } as any);
     } else {
@@ -263,6 +265,28 @@ export function MaterialEditorForm({ onGenerate, isProcessing = false }: Materia
                   {(errors as any).numCards.message}
                 </p>
               )}
+            </div>
+          )}
+
+          {materialType === "flashcards" && (
+            <div className="space-y-2">
+              <Label htmlFor="card-type">Card Type</Label>
+              <Controller
+                name="cardType"
+                control={control}
+                render={({ field }) => (
+                  <Select value={field.value} onValueChange={field.onChange}>
+                    <SelectTrigger className="border-grey w-full" id="card-type">
+                      <SelectValue placeholder="Select card type" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="definition">Definition</SelectItem>
+                      <SelectItem value="concept">Concept</SelectItem>
+                      <SelectItem value="example">Example</SelectItem>
+                    </SelectContent>
+                  </Select>
+                )}
+              />
             </div>
           )}
 

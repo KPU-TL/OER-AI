@@ -31,7 +31,8 @@ import * as targets from "aws-cdk-lib/aws-events-targets";
 interface ApiGatewayStackProps extends cdk.StackProps {
   ecrRepositories: { [key: string]: ecr.Repository };
   codeBuildProjects?: { [key: string]: codebuild.IProject };
-  csvBucket: s3.Bucket;
+  csvBucketName: string;
+  csvBucketArn: string;
   textbookIngestionQueue: sqs.Queue;
 }
 
@@ -856,14 +857,15 @@ export class ApiGatewayStack extends cdk.Stack {
         timeout: Duration.seconds(30),
         memorySize: 128,
         environment: {
-          BUCKET: props.csvBucket.bucketName,
+          BUCKET: props.csvBucketName,
           REGION: this.region,
         },
         role: lambdaRole,
       }
     );
 
-    props.csvBucket.grantPut(presignedUrlFunction);
+    const csvBucket = s3.Bucket.fromBucketArn(this, "ImportedCsvBucket", props.csvBucketArn);
+    csvBucket.grantPut(presignedUrlFunction);
 
     presignedUrlFunction.grantInvoke(
       new iam.ServicePrincipal("apigateway.amazonaws.com")
@@ -1898,7 +1900,7 @@ export class ApiGatewayStack extends cdk.Stack {
       }
     );
 
-    // API Gateway permission
+    // API Gateway permission - on base function (unqualified invocations)
     practiceMaterialDockerFunc.addPermission("AllowApiGatewayInvoke", {
       principal: new iam.ServicePrincipal("apigateway.amazonaws.com"),
       action: "lambda:InvokeFunction",
@@ -1921,6 +1923,13 @@ export class ApiGatewayStack extends cdk.Stack {
       aliasName: "live",
       version: practiceMaterialDockerFunc.currentVersion,
       provisionedConcurrentExecutions: 1,
+    });
+
+    // API Gateway permission - on alias (qualified :live invocations from OpenAPI integration)
+    practiceMaterialAlias.addPermission("AllowApiGatewayInvokeAlias", {
+      principal: new iam.ServicePrincipal("apigateway.amazonaws.com"),
+      action: "lambda:InvokeFunction",
+      sourceArn: `arn:aws:execute-api:${this.region}:${this.account}:${this.api.restApiId}/*/*/textbooks/*/practice_materials*`,
     });
 
     // WebSocket streaming support - add environment variable and permissions

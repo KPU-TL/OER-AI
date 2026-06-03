@@ -1,3 +1,5 @@
+# Practice Material Lambda - Docker-based
+# Deployment version: 2024-05-12-v2 (card_type prompt fix)
 import os
 import json
 import time
@@ -289,7 +291,7 @@ def apply_guardrails(text: str, source: str = "INPUT") -> dict:
         bedrock_client = boto3.client("bedrock-runtime", region_name=BEDROCK_REGION)
         response = bedrock_client.apply_guardrail(
             guardrailIdentifier=GUARDRAIL_ID,
-            guardrailVersion="DRAFT",
+            guardrailVersion="1",
             source=source,
             content=[{"text": {"text": text}}]
         )
@@ -515,6 +517,7 @@ def handler(event, context):
     # Flashcard-specific parameters
     num_cards = clamp(int(body.get("num_cards", 10)), 1, 20)
     card_type = str(body.get("card_type", "definition")).lower().strip()
+    logger.info(f"Parsed parameters - material_type: {material_type}, card_type: {card_type}, num_cards: {num_cards}, difficulty: {difficulty}, topic: {topic}")
     
     # Short answer-specific parameters
     # For short answers, reuse num_questions but with different limits
@@ -911,6 +914,13 @@ def handle_grading(event, context):
     except Exception as e:
         logger.exception("Error grading answer")
         return {
+            "statusCode": 500,
+            "headers": {
+                "Content-Type": "application/json",
+                "Access-Control-Allow-Headers": "*",
+                "Access-Control-Allow-Origin": "*",
+                "Access-Control-Allow-Methods": "*",
+            },
             "body": json.dumps({"error": f"Error grading answer: {str(e)}"}),
         }
 

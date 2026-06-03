@@ -121,7 +121,7 @@ Where it's wired:
 ```python
 response = bedrock_runtime.apply_guardrail(
     guardrailIdentifier=guardrail_id,
-    guardrailVersion="DRAFT",
+    guardrailVersion="1",  # Must be a published version, not "DRAFT"
     source=source, # "INPUT" or "OUTPUT"
     content=[ {"text": {"text": text}} ]
 )
@@ -187,7 +187,7 @@ content = 'What is my credit card number 4111-1111-1111-1111?'
 
 response = bedrock_runtime.apply_guardrail(
     guardrailIdentifier=guardrail_id,
-    guardrailVersion='DRAFT',
+    guardrailVersion='1',  # Use published version, not "DRAFT"
     source='INPUT',
     content=[ { 'text': { 'text': content } } ],
 )
@@ -222,7 +222,7 @@ To modify guardrail settings:
 2. Update `blockedInputMessaging` or `blockedOutputsMessaging` to provide tailored messaging.
 3. Deploy the CDK stack to update the guardrail and SSM parameter.
 
-Note: Guardrail `guardrailVersion` is set to `DRAFT` by runtime; after publishing or finalizing versions in the console, update `guardrailVersion` value if you want to pin the lambda to a specific published version.
+**Important:** After deploying the CDK stack (which creates the guardrail in DRAFT state), you must publish version 1 of the guardrail in the AWS Bedrock console before the application will work. The Lambda functions reference `guardrailVersion="1"` — if no published version exists, guardrail calls will fail at runtime. See the Bedrock console > Guardrails > select your guardrail > "Create version" to publish.
 
 ## Troubleshooting
 

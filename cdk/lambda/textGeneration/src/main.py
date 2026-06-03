@@ -41,7 +41,6 @@ import os
 import json
 import time
 import logging
-import threading
 
 # Import custom exceptions
 try:
@@ -767,43 +766,38 @@ def track_usage_and_logs(connection, chat_session_id, question, response_data, t
         except Exception as e:
             logger.error(f"Error updating session name: {e}")
 
-    # 3. Async Logging
+    # 3. Synchronous Interaction Logging
+    # NOTE: Previously this was async (fire-and-forget thread), but that caused a race
+    # condition where navigating between chats before the thread committed would result
+    # in the most recent message disappearing. Since the WebSocket "complete" message has
+    # already been sent at this point, the user isn't waiting on this Lambda — making the
+    # DB write synchronous here has no UX impact but guarantees data availability.
     if chat_session_id:
-        def log_interaction_async(session_id, q, resp, sources, tb_id):
-            async_conn = None
-            try:
-                async_conn = connect_to_db()
-                with async_conn.cursor() as cur:
-                    cur.execute(
-                        """
-                        INSERT INTO user_interactions
-                        (chat_session_id, sender_role, query_text, response_text, source_chunks)
-                        VALUES (%s, %s, %s, %s, %s)
-                        """,
-                        (session_id, "User", q, resp, json.dumps(sources))
-                    )
-                async_conn.commit()
-                logger.info(f"[ASYNC] Logged interaction for textbook {tb_id}")
-            except Exception as async_error:
-                logger.error(f"[ASYNC] Error logging interaction: {async_error}")
-                if async_conn:
-                    try:
-                        async_conn.rollback()
-                    except Exception as rollback_error:
-                        logger.error(f"[ASYNC] Error during rollback: {rollback_error}", exc_info=True)
-            finally:
-                if async_conn:
-                    return_db_connection(async_conn)
-                    logger.debug("[ASYNC] Returned connection to pool")
-
-        log_thread = threading.Thread(
-            target=log_interaction_async,
-            args=(chat_session_id, question, response_data["response"], 
-                  response_data["sources_used"], textbook_id),
-            daemon=False
-        )
-        log_thread.start()
-        logger.info("Started async analytics logging thread")
+        log_conn = None
+        try:
+            log_conn = connect_to_db()
+            with log_conn.cursor() as cur:
+                cur.execute(
+                    """
+                    INSERT INTO user_interactions
+                    (chat_session_id, sender_role, query_text, response_text, source_chunks)
+                    VALUES (%s, %s, %s, %s, %s)
+                    """,
+                    (chat_session_id, "User", question, response_data["response"], json.dumps(response_data["sources_used"]))
+                )
+            log_conn.commit()
+            logger.info(f"Logged interaction for textbook {textbook_id}")
+        except Exception as log_error:
+            logger.error(f"Error logging interaction: {log_error}")
+            if log_conn:
+                try:
+                    log_conn.rollback()
+                except Exception as rollback_error:
+                    logger.error(f"Error during rollback: {rollback_error}", exc_info=True)
+        finally:
+            if log_conn:
+                return_db_connection(log_conn)
+                logger.debug("Returned connection to pool")
 
     return session_name
 

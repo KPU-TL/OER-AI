@@ -64,8 +64,8 @@ export function MCQEditableContainer({
         ],
       },
     };
-    // Add new question at the end of the list
-    setQuestions([...questions, newQuestion]);
+    // Add new question at the beginning of the list
+    setQuestions([newQuestion, ...questions]);
   };
 
   const handleDeleteQuestion = (index: number) => {

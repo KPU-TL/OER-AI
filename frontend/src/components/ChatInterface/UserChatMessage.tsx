@@ -45,11 +45,16 @@ export default function UserChatMessage({ text, textbookId, onSaveSuccess, onSav
       if (settings.mode === "ai") return; // don't autoplay AI only if set
       if (!messageTime || !initialLoadTime) return;
       if (messageTime < initialLoadTime) return;
-      speak(text, { id });
+      // Small delay to prevent multiple messages from firing speech simultaneously
+      // (which causes overlapping voices in Firefox)
+      const timer = setTimeout(() => {
+        speak(text, { id });
+      }, 50);
+      return () => clearTimeout(timer);
     } catch (e) {
       console.error("Speech autoplay failed", e);
     }
-  }, [settings, messageTime, initialLoadTime, speak]);
+  }, [settings.enabled, settings.autoplay, settings.mode, messageTime, initialLoadTime]);
 
   function handleOpen() {
     setName("");

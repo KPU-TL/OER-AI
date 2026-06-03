@@ -83,6 +83,8 @@ exports.handler = async (event) => {
         };
       }
 
+      console.log(`Practice material request - card_type: ${card_type}, material_type: ${material_type}, force_fresh: ${force_fresh}`);
+
       const practicePayload = {
         pathParameters: {
           textbook_id: textbook_id,

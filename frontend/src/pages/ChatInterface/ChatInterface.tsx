@@ -67,6 +67,7 @@ export default function AIChatPage() {
 
   const { sessionUuid } = useUserSession();
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const messagesCacheRef = useRef<Map<string, Message[]>>(new Map());
   const { mode } = useMode();
   const { token } = useAuthToken();
 
@@ -94,6 +95,21 @@ export default function AIChatPage() {
   useEffect(() => {
     scrollToBottom();
   }, [messages, scrollToBottom]);
+
+  // Cache messages per chat session so navigating back restores them instantly
+  // Use a ref to track which session the current messages belong to
+  const currentSessionForMessagesRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (
+      activeChatSessionId &&
+      messages.length > 0 &&
+      !isLoadingHistory &&
+      currentSessionForMessagesRef.current === activeChatSessionId
+    ) {
+      messagesCacheRef.current.set(activeChatSessionId, messages);
+    }
+  }, [messages, activeChatSessionId, isLoadingHistory]);
 
   // Capture the initial messages load time to avoid autoplaying historical messages
   useEffect(() => {
@@ -429,6 +445,20 @@ export default function AIChatPage() {
     if (!activeChatSessionId) {
       return;
     }
+
+    // Check local cache first — avoids race condition where async DB write
+    // hasn't committed yet when navigating back to a chat
+    const cached = messagesCacheRef.current.get(activeChatSessionId);
+    if (cached && cached.length > 0) {
+      currentSessionForMessagesRef.current = activeChatSessionId;
+      setMessages(cached);
+      setIsLoadingHistory(false);
+      return;
+    }
+
+    // Clear messages immediately when switching to prevent showing stale content
+    setMessages([]);
+    currentSessionForMessagesRef.current = activeChatSessionId;
 
     const loadChatHistory = async () => {
       setIsLoadingHistory(true);

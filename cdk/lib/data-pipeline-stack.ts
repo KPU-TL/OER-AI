@@ -34,7 +34,7 @@ export class DataPipelineStack extends cdk.Stack {
 
     // Create S3 bucket for CSV ingestion
     this.csvBucket = new s3.Bucket(this, `${id}-csv-bucket`, {
-      bucketName: `${id.toLowerCase()}-csv-ingestion-bucket`,
+
       blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
       cors: [
         {
@@ -193,7 +193,7 @@ export class DataPipelineStack extends cdk.Stack {
 
     // Create S3 bucket for Glue scripts and custom modules
     this.glueBucket = new s3.Bucket(this, `${id}-glue-bucket`, {
-      bucketName: `${id.toLowerCase()}-glue-processing-bucket`,
+
       removalPolicy: cdk.RemovalPolicy.DESTROY,
       autoDeleteObjects: true,
       blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
@@ -564,6 +564,20 @@ export class DataPipelineStack extends cdk.Stack {
     new cdk.CfnOutput(this, "MediaIngestionQueueUrl", {
       value: this.mediaIngestionQueue.queueUrl,
       description: "URL of the media ingestion SQS queue",
+    });
+
+    // Stable exports for cross-stack references (avoids CDK auto-generated export names
+    // that change when logical IDs change, causing "Cannot update export" errors)
+    new cdk.CfnOutput(this, "CsvBucketName", {
+      value: this.csvBucket.bucketName,
+      exportName: `${id}-CsvBucketName`,
+      description: "Name of the CSV ingestion bucket",
+    });
+
+    new cdk.CfnOutput(this, "CsvBucketArn", {
+      value: this.csvBucket.bucketArn,
+      exportName: `${id}-CsvBucketArn`,
+      description: "ARN of the CSV ingestion bucket",
     });
   }
 }
