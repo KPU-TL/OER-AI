@@ -980,7 +980,7 @@ def handler(event, context):
         cached_response = handle_faq_check(question, textbook_id, embeddings, connection, is_websocket, connection_id, websocket_endpoint)
         
         if cached_response:
-            response_data = {"response": cached_response["answer"], "sources_used": cached_response.get("sources", []), "cache_similarity": cached_response.get("similarity")}
+            response_data = {"response": cached_response["answer_text"], "sources_used": cached_response.get("sources", []), "cache_similarity": cached_response.get("similarity")}
             from_cache = True
         else:
             # Generate Response
