@@ -47,12 +47,18 @@ export class CICDStack extends cdk.Stack {
         effect: iam.Effect.ALLOW,
         actions: [
           "lambda:GetFunction",
+          "lambda:GetFunctionConfiguration",
           "lambda:UpdateFunctionCode",
           "lambda:UpdateFunctionConfiguration",
+          "lambda:PublishVersion",
+          "lambda:UpdateAlias",
+          "lambda:GetAlias",
         ],
         resources: [
           `arn:aws:lambda:${this.region}:${this.account}:function:*-TextGenLambdaDockerFunction`,
+          `arn:aws:lambda:${this.region}:${this.account}:function:*-TextGenLambdaDockerFunction:*`,
           `arn:aws:lambda:${this.region}:${this.account}:function:*-PracticeMaterialLambdaDockerFunction`,
+          `arn:aws:lambda:${this.region}:${this.account}:function:*-PracticeMaterialLambdaDockerFunction:*`,
         ],
       })
     );
@@ -231,13 +237,49 @@ export class CICDStack extends cdk.Stack {
                     fi
                   '`,
                   'echo "Checking if Lambda function exists before updating..."',
-                  // Combine the Lambda update into a single command
+                  // Update function code, wait for it to be ready, publish version, update alias
                   `bash -c '
                     if aws lambda get-function --function-name $LAMBDA_FUNCTION_NAME &>/dev/null; then
                       echo "Updating Lambda function to use the new image..."
                       aws lambda update-function-code \
                         --function-name $LAMBDA_FUNCTION_NAME \
                         --image-uri $REPOSITORY_URI:latest
+
+                      echo "Waiting for function update to complete..."
+                      # Wait with retries - function-updated waiter needs GetFunctionConfiguration
+                      for i in $(seq 1 30); do
+                        STATUS=$(aws lambda get-function --function-name $LAMBDA_FUNCTION_NAME \
+                          --query "Configuration.LastUpdateStatus" --output text 2>/dev/null || echo "Unknown")
+                        if [ "$STATUS" = "Successful" ]; then
+                          echo "Function update completed successfully."
+                          break
+                        fi
+                        echo "Update status: $STATUS - waiting... (attempt $i/30)"
+                        sleep 5
+                      done
+
+                      echo "Publishing new version..."
+                      NEW_VERSION=$(aws lambda publish-version \
+                        --function-name $LAMBDA_FUNCTION_NAME \
+                        --description "Pipeline deploy: $IMAGE_TAG" \
+                        --query "Version" --output text)
+                      
+                      if [ -z "$NEW_VERSION" ] || [ "$NEW_VERSION" = "None" ]; then
+                        echo "ERROR: Failed to publish new version."
+                        exit 1
+                      fi
+                      echo "Published version: $NEW_VERSION"
+
+                      echo "Updating live alias to version $NEW_VERSION..."
+                      if aws lambda get-alias --function-name $LAMBDA_FUNCTION_NAME --name live &>/dev/null; then
+                        aws lambda update-alias \
+                          --function-name $LAMBDA_FUNCTION_NAME \
+                          --name live \
+                          --function-version "$NEW_VERSION"
+                        echo "Alias live updated to version $NEW_VERSION"
+                      else
+                        echo "No live alias found — skipping alias update. Function \$LATEST was updated."
+                      fi
                     else
                       echo "Lambda function $LAMBDA_FUNCTION_NAME does not exist yet. Skipping update."
                     fi

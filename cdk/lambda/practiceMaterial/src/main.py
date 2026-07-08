@@ -655,6 +655,7 @@ def handler(event, context):
         else:  # short_answer
             prompt = build_short_answer_prompt(topic, difficulty, num_questions, snippets)
         logger.info(f"Prompt built, length: {len(prompt)} chars")
+        logger.info(f"Full prompt:\n{prompt}")
 
         # Stage 6: Invoke LLM (the slowest part - ~15 seconds)
         send_progress("generating", 40)
